@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mon Français B1 — Practice</title>
+  <meta name="description" content="A personal French B1 grammar and vocabulary practice app with spaced repetition.">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- ═══ TOP BAR ═══ -->
+  <header id="top-bar">
+    <div class="top-bar-left">
+      <h1 id="app-title">Mon Français B1</h1>
+      <div class="nav-tabs">
+        <button id="nav-practice" class="nav-tab active">Practice</button>
+        <button id="nav-dashboard" class="nav-tab">Progress</button>
+      </div>
+    </div>
+    <div class="top-bar-right">
+      <div id="streak-display" class="streak hidden">
+        <span class="streak-icon">🔥</span>
+        <span id="streak-count">0</span>
+      </div>
+      <label class="tts-toggle" id="tts-toggle-label">
+        <span class="tts-label-text">Auto TTS</span>
+        <input type="checkbox" id="auto-tts-toggle">
+        <span class="tts-slider"></span>
+      </label>
+    </div>
+  </header>
+
+  <!-- ═══ MAIN CARD ═══ -->
+  <main id="main-area">
+
+    <!-- ═══ PRACTICE VIEW ═══ -->
+    <section id="practice-view" class="view-section">
+      <div id="focused-banner" class="focused-banner hidden">
+        <span>🎯 Training: <strong id="focused-topic-name"></strong></span>
+        <button id="exit-focus-btn" class="exit-focus-btn">Exit</button>
+      </div>
+
+      <div id="question-card" class="card">
+      <div class="card-header">
+        <span id="question-type-label" class="type-label"></span>
+        <span id="questions-today" class="today-count"></span>
+      </div>
+
+      <div id="prompt-area" class="prompt-area">
+        <p id="question-prompt"></p>
+        <div id="listening-controls" class="listening-controls hidden">
+          <button class="speed-btn" data-speed="1.0">1x (Normal)</button>
+          <button class="speed-btn" data-speed="0.8">0.8x (Slow)</button>
+          <button class="speed-btn" data-speed="0.6">0.6x (Slower)</button>
+        </div>
+      </div>
+
+      <button id="reveal-btn" class="reveal-btn">Reveal Answer</button>
+
+      <div id="answer-area" class="answer-area hidden">
+        <div id="topic-badges"></div>
+        <div id="answer-content"></div>
+        <button id="tts-btn" class="tts-btn" title="Listen 🔊">🔊</button>
+      </div>
+
+      <!-- ═══ GRADING BUTTONS ═══ -->
+      <div id="grade-buttons" class="grade-buttons hidden">
+        <button class="grade-btn grade-easy" data-grade="easy">
+          <span class="grade-key">1</span> Easy
+        </button>
+        <button class="grade-btn grade-ok" data-grade="ok">
+          <span class="grade-key">2</span> OK
+        </button>
+        <button class="grade-btn grade-ehh" data-grade="ehh">
+          <span class="grade-key">3</span> Ehh
+        </button>
+        <button class="grade-btn grade-hard" data-grade="hard">
+          <span class="grade-key">4</span> Hard
+        </button>
+      </div>
+    </section>
+
+    <!-- ═══ DASHBOARD VIEW ═══ -->
+    <section id="dashboard-view" class="view-section hidden">
+      <div class="dashboard-header">
+        <h2>Grammar Progress</h2>
+        <p class="dashboard-hint">Mastery decays over time (-2pts per day). Practice to restore.</p>
+      </div>
+      <div id="topics-grid" class="topics-grid">
+        <!-- Injected by JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <footer id="footer">
+    <span class="footer-hint">Space to reveal · 1–4 to grade</span>
+  </footer>
+
+  <script src="questions.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
