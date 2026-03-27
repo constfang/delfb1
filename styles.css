@@ -1,26 +1,26 @@
 /* ═══════════════════════════════════════════════
    Mon Français B1 — Styles
-   Aesthetic: Refined, literary, warm editorial
+   Aesthetic: Refined, literary, dark OLED mode
    ═══════════════════════════════════════════════ */
 
 :root {
-  /* Palette */
-  --bg:          #FAF7F2;
-  --bg-card:     #FFFDF9;
-  --text:        #2B2D42;
-  --text-muted:  #6B6E7B;
-  --accent:      #9B3B3B;        /* Bordeaux red */
-  --accent-soft: #C76A6A;
-  --accent-bg:   rgba(155,59,59,0.06);
-  --navy:        #2B2D42;
-  --border:      #E8E4DD;
-  --shadow:      rgba(43,45,66,0.06);
+  /* Dark palette — OLED-friendly near-blacks */
+  --bg:          #0D0D0D;
+  --bg-card:     #161616;
+  --text:        #E8E3DA;
+  --text-muted:  #7A776F;
+  --accent:      #C9903A;        /* Warm amber */
+  --accent-soft: #A0702C;
+  --accent-bg:   rgba(201,144,58,0.08);
+  --navy:        #E8E3DA;        /* Repurposed as primary text in dark mode */
+  --border:      #2A2A2A;
+  --shadow:      rgba(0,0,0,0.4);
 
-  /* Grading colors */
-  --easy:   #3A7D5C;
-  --ok:     #5A6E82;
-  --ehh:    #C4893A;
-  --hard:   #B53A3A;
+  /* Grading colors — slightly brightened for dark bg */
+  --easy:   #2E6B4C;
+  --ok:     #3D5470;
+  --ehh:    #A06B24;
+  --hard:   #8C2828;
 
   /* Type */
   --font-display: 'Lora', 'Georgia', serif;
@@ -46,10 +46,10 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  /* Subtle paper texture via gradient noise */
+  /* Subtle dark vignette */
   background-image:
-    radial-gradient(ellipse at 20% 50%, rgba(200,180,160,0.08) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 20%, rgba(180,160,140,0.06) 0%, transparent 50%);
+    radial-gradient(ellipse at 20% 50%, rgba(201,144,58,0.03) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, rgba(201,144,58,0.02) 0%, transparent 50%);
 }
 
 /* ═══ TOP BAR ═══ */
@@ -153,7 +153,7 @@ body {
   left: 2px;
   width: 16px;
   height: 16px;
-  background: white;
+  background: var(--text);
   border-radius: 50%;
   transition: transform 0.25s ease;
   box-shadow: 0 1px 3px var(--shadow);
@@ -259,8 +259,8 @@ body {
   padding: 36px 32px 32px;
   position: relative;
   box-shadow: 0 1px 4px var(--shadow), 0 0 0 1px rgba(0,0,0,0.02);
-  /* Paper texture */
-  background-image: linear-gradient(175deg, transparent 48%, rgba(200,180,160,0.03) 50%, transparent 52%);
+  /* Subtle dark shimmer */
+  background-image: linear-gradient(175deg, transparent 48%, rgba(255,255,255,0.01) 50%, transparent 52%);
   animation: cardFadeIn 0.4s ease;
 }
 
@@ -319,8 +319,8 @@ body {
   bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--navy);
-  color: #fff;
+  background: var(--bg-card);
+  color: var(--text);
   font-family: var(--font-body);
   font-size: 0.72rem;
   padding: 4px 10px;
