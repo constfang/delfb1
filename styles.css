@@ -524,6 +524,16 @@ body {
 .grade-ehh:hover  { background: #B07828; }
 .grade-hard:hover { background: #9A2E2E; }
 
+/* Hands-Free Mode Overrides */
+.hf-mode .grade-easy,
+.hf-mode .grade-hard {
+  display: none !important;
+}
+
+.hf-mode.grade-buttons {
+  grid-template-columns: 1fr 1fr;
+}
+
 /* ═══ DASHBOARD ═══ */
 .dashboard-header {
   width: 100%;
@@ -620,6 +630,14 @@ body {
   font-size: 0.7rem;
   color: var(--text-muted);
   letter-spacing: 0.03em;
+}
+
+.footer-subscript {
+  margin-top: 8px;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  opacity: 0.5;
+  line-height: 1.4;
 }
 
 /* ═══ RESPONSIVE ═══ */

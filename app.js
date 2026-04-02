@@ -110,7 +110,9 @@
   let questionStates = {};   // keyed by question id
   let topicStates = {};      // keyed by topic name
   let sessionLog = [];
-  let settings = { auto_tts: false };
+  let settings = { auto_tts: false, hands_free: false };
+  let hfTimeout = null;
+  let speakPromiseResolve = null;
 
   let currentMode = 'global'; // 'global' or 'focused'
   let focusedTopic = null;
@@ -137,7 +139,7 @@
     questionStates = (await window.storage.get('question_states')) || {};
     topicStates = (await window.storage.get('topic_states')) || {};
     sessionLog = (await window.storage.get('session_log')) || [];
-    settings = (await window.storage.get('settings')) || { auto_tts: false };
+    settings = (await window.storage.get('settings')) || { auto_tts: false, hands_free: false };
 
     // DATA MIGRATION: clear old unmapped topics
     for (const t of Object.keys(topicStates)) {
@@ -178,8 +180,11 @@
 
     // UI setup
     document.getElementById('auto-tts-toggle').checked = settings.auto_tts;
+    const hfToggle = document.getElementById('hands-free-toggle');
+    if (hfToggle) hfToggle.checked = settings.hands_free;
     updateStreakDisplay();
     updateTodayCount();
+    updateTTSButtons();
 
     await saveAll();
     pickAndShowQuestion();
@@ -334,16 +339,34 @@
     }
   }
 
+  function updateTTSButtons() {
+    const autoTts = document.getElementById('auto-tts-toggle');
+    const manualTts = document.getElementById('tts-btn');
+    if (autoTts) autoTts.disabled = settings.hands_free;
+    if (manualTts) manualTts.disabled = settings.hands_free;
+    
+    const autoLabel = document.getElementById('tts-toggle-label');
+    if (autoLabel) {
+      autoLabel.style.opacity = settings.hands_free ? '0.5' : '1';
+      autoLabel.style.cursor = settings.hands_free ? 'not-allowed' : 'pointer';
+    }
+    if (manualTts) {
+      manualTts.style.opacity = settings.hands_free ? '0.5' : '1';
+      manualTts.style.cursor = settings.hands_free ? 'not-allowed' : 'pointer';
+    }
+  }
+
   // ═══ QUESTION SELECTION ═══
   function pickNextQuestion() {
     const today = getTodayStr();
 
     // Collect all due questions
     let candidates = QUESTION_BANK.filter(q => {
+      if (settings.hands_free && q.type !== 'translation' && q.type !== 'listening') return false;
       if (currentMode === 'focused' && focusedTopic) {
         if (!q.topics.includes(focusedTopic)) return false;
       }
-      if (q.type === 'listening' && !settings.auto_tts) return false;
+      if (!settings.hands_free && q.type === 'listening' && !settings.auto_tts) return false;
       const qs = questionStates[q.id];
       return qs && qs.next_review <= today;
     });
@@ -365,10 +388,11 @@
     if (candidates.length === 0) {
       // No questions due — pick most overdue anyway
       candidates = [...QUESTION_BANK].filter(q => {
+        if (settings.hands_free && q.type !== 'translation' && q.type !== 'listening') return false;
         if (currentMode === 'focused' && focusedTopic) {
           if (!q.topics.includes(focusedTopic)) return false;
         }
-        if (q.type === 'listening' && !settings.auto_tts) return false;
+        if (!settings.hands_free && q.type === 'listening' && !settings.auto_tts) return false;
         return true;
       }).sort((a, b) => {
         const qsA = questionStates[a.id];
@@ -412,20 +436,43 @@
   }
 
   // ═══ TTS ═══
-  function speak(text, rate = 0.9) {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.lang = 'fr-FR';
-    
-    // Try to find a French voice, prioritizing Thomas
-    const voices = window.speechSynthesis.getVoices();
-    const thomas = voices.find(v => v.name.includes('Thomas') && v.lang.startsWith('fr'));
-    const frVoice = thomas || voices.find(v => v.lang.startsWith('fr'));
-    
-    if (frVoice) utt.voice = frVoice;
-    utt.rate = rate;
-    window.speechSynthesis.speak(utt);
+  function speak(text, rate = 0.9, lang = 'fr-FR') {
+    return new Promise((resolve) => {
+      if (!window.speechSynthesis) return resolve();
+      
+      // If there's a pending promise, resolve it (cancellation)
+      if (speakPromiseResolve) speakPromiseResolve();
+      speakPromiseResolve = resolve;
+      
+      window.speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.lang = lang;
+      
+      const voices = window.speechSynthesis.getVoices();
+      if (lang.startsWith('fr')) {
+        const thomas = voices.find(v => v.name.includes('Thomas') && v.lang.startsWith('fr'));
+        const frVoice = thomas || voices.find(v => v.lang.startsWith('fr'));
+        if (frVoice) utt.voice = frVoice;
+      } else {
+        const enVoice = voices.find(v => v.lang.startsWith('en'));
+        if (enVoice) utt.voice = enVoice;
+      }
+      
+      utt.rate = rate;
+      utt.onend = () => {
+        if (speakPromiseResolve === resolve) {
+          speakPromiseResolve = null;
+          resolve();
+        }
+      };
+      utt.onerror = () => {
+        if (speakPromiseResolve === resolve) {
+          speakPromiseResolve = null;
+          resolve();
+        }
+      };
+      window.speechSynthesis.speak(utt);
+    });
   }
 
   // Ensure voices are loaded
@@ -517,6 +564,9 @@
   }
 
   function renderQuestion(q) {
+    if (hfTimeout) { clearTimeout(hfTimeout); hfTimeout = null; }
+    if (speakPromiseResolve) { speakPromiseResolve(); speakPromiseResolve = null; window.speechSynthesis?.cancel(); }
+
     // Type label
     document.getElementById('question-type-label').textContent = TYPE_LABELS[q.type] || q.type;
 
@@ -537,7 +587,7 @@
     if (q.type === 'listening') {
       promptEl.innerHTML = '<span style="color: var(--text-muted); font-style: italic; text-align: center; display: block;">🎧 Listen to the phrase...</span>';
       listeningControls.classList.remove('hidden');
-      if (settings.auto_tts) {
+      if (settings.auto_tts && !settings.hands_free) {
         speak(q.tts_answer, 1.0);
       }
     } else {
@@ -557,6 +607,28 @@
     card.style.animation = 'cardFadeIn 0.4s ease';
 
     updateTodayCount();
+
+    if (settings.hands_free) {
+      if (q.type === 'translation') {
+        const plainText = q.prompt.replace(/<[^>]+>/g, '');
+        speak(plainText, 1.0, 'en-US').then(() => {
+          hfTimeout = setTimeout(revealAnswer, 8000);
+        });
+      } else if (q.type === 'listening') {
+        let playCount = 0;
+        const playLoop = () => {
+          playCount++;
+          speak(q.tts_answer, 0.6, 'fr-FR').then(() => {
+            if (playCount < 4) {
+              hfTimeout = setTimeout(playLoop, 1000);
+            } else {
+              hfTimeout = setTimeout(revealAnswer, 2000);
+            }
+          });
+        };
+        playLoop();
+      }
+    }
   }
 
   function highlightVocab(text, vocabulary) {
@@ -586,6 +658,7 @@
   function revealAnswer() {
     if (revealed) return;
     revealed = true;
+    if (hfTimeout) { clearTimeout(hfTimeout); hfTimeout = null; }
 
     const q = currentQuestion;
     document.getElementById('reveal-btn').classList.add('hidden');
@@ -626,14 +699,27 @@
     document.getElementById('answer-area').classList.remove('hidden');
     document.getElementById('grade-buttons').classList.remove('hidden');
 
-    // Auto TTS
-    if (settings.auto_tts) {
-      speak(q.tts_answer);
+    // HF mode styling
+    if (settings.hands_free) {
+      document.getElementById('grade-buttons').classList.add('hf-mode');
+      // Wait 5s, auto read, delay 3s, next question
+      hfTimeout = setTimeout(() => {
+        speak(q.tts_answer, 1.0, 'fr-FR').then(() => {
+          hfTimeout = setTimeout(pickAndShowQuestion, 3000);
+        });
+      }, 5000);
+    } else {
+      document.getElementById('grade-buttons').classList.remove('hf-mode');
+      // Auto TTS
+      if (settings.auto_tts) {
+        speak(q.tts_answer);
+      }
     }
   }
 
   async function handleGrade(grade) {
     if (!currentQuestion || !revealed) return;
+    if (hfTimeout) { clearTimeout(hfTimeout); hfTimeout = null; }
 
     gradeQuestion(currentQuestion.id, grade);
     updateTopicScores(currentQuestion, grade);
@@ -642,7 +728,14 @@
     updateTodayCount();
 
     await saveAll();
-    pickAndShowQuestion();
+    
+    if (settings.hands_free) {
+      speak(currentQuestion.tts_answer, 1.0, 'fr-FR').then(() => {
+        hfTimeout = setTimeout(pickAndShowQuestion, 3000);
+      });
+    } else {
+      pickAndShowQuestion();
+    }
   }
 
   function updateTodayCount() {
@@ -668,6 +761,7 @@
 
     // TTS button
     document.getElementById('tts-btn').addEventListener('click', () => {
+      if (settings.hands_free) return;
       if (currentQuestion) speak(currentQuestion.tts_answer);
     });
 
@@ -686,6 +780,18 @@
       settings.auto_tts = e.target.checked;
       await window.storage.set('settings', settings);
     });
+
+    const hfToggle = document.getElementById('hands-free-toggle');
+    if (hfToggle) {
+      hfToggle.addEventListener('change', async (e) => {
+        settings.hands_free = e.target.checked;
+        await window.storage.set('settings', settings);
+        updateTTSButtons();
+        if (hfTimeout) { clearTimeout(hfTimeout); hfTimeout = null; }
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+        if (settings.hands_free) pickAndShowQuestion();
+      });
+    }
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
