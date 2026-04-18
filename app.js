@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════
-   Mon Français B1 — Application Logic
+   Mon Français B1 — Application Logic  v1.2
    Storage · Scheduling · Topic scoring · TTS · UI rendering
+   Edit mode · Vocab Drill
    ═══════════════════════════════════════════════════════════════════ */
 
 (function () {
@@ -110,15 +111,16 @@
   let questionStates = {};   // keyed by question id
   let topicStates = {};      // keyed by topic name
   let sessionLog = [];
-  let settings = { auto_tts: false, hands_free: false };
-  let hfTimeout = null;
-  let speakPromiseResolve = null;
+  let settings = { auto_tts: false };
+  let questionEdits = {};    // keyed by question id → patch object
+  let vocabList = [];         // [{ fr, en, addedAt }]
 
   let currentMode = 'global'; // 'global' or 'focused'
   let focusedTopic = null;
 
   let currentQuestion = null;
   let revealed = false;
+  let editMode = false;
   let todayCount = 0;
   let todayDate = getTodayStr();
 
@@ -139,7 +141,15 @@
     questionStates = (await window.storage.get('question_states')) || {};
     topicStates = (await window.storage.get('topic_states')) || {};
     sessionLog = (await window.storage.get('session_log')) || [];
-    settings = (await window.storage.get('settings')) || { auto_tts: false, hands_free: false };
+    settings = (await window.storage.get('settings')) || { auto_tts: false };
+    questionEdits = (await window.storage.get('question_edits')) || {};
+    vocabList = (await window.storage.get('vocab_list')) || [];
+
+    // Clean stale settings keys
+    delete settings.hands_free;
+
+    // Apply saved question edits to QUESTION_BANK
+    applyQuestionEdits();
 
     // DATA MIGRATION: clear old unmapped topics
     for (const t of Object.keys(topicStates)) {
@@ -180,15 +190,25 @@
 
     // UI setup
     document.getElementById('auto-tts-toggle').checked = settings.auto_tts;
-    const hfToggle = document.getElementById('hands-free-toggle');
-    if (hfToggle) hfToggle.checked = settings.hands_free;
     updateStreakDisplay();
     updateTodayCount();
-    updateTTSButtons();
 
     await saveAll();
     pickAndShowQuestion();
     bindEvents();
+  }
+
+  // ═══ QUESTION EDITS — Apply saved edits to QUESTION_BANK ═══
+  function applyQuestionEdits() {
+    for (const [qId, patch] of Object.entries(questionEdits)) {
+      const q = QUESTION_BANK.find(item => item.id === qId);
+      if (!q) continue;
+      if (patch.prompt !== undefined) q.prompt = patch.prompt;
+      if (patch.answers !== undefined) q.answers = patch.answers;
+      if (patch.explanations !== undefined) q.explanations = patch.explanations;
+      if (patch.tts_answer !== undefined) q.tts_answer = patch.tts_answer;
+      if (patch.vocabulary !== undefined) q.vocabulary = patch.vocabulary;
+    }
   }
 
   // ═══ PERSISTENCE ═══
@@ -197,6 +217,8 @@
     await window.storage.set('topic_states', topicStates);
     await window.storage.set('session_log', sessionLog);
     await window.storage.set('settings', settings);
+    await window.storage.set('question_edits', questionEdits);
+    await window.storage.set('vocab_list', vocabList);
   }
 
   // ═══ TOPIC DECAY ═══
@@ -224,7 +246,6 @@
         qs.interval_days *= qs.ease_factor * 1.3;
         qs.ease_factor += 0.1;
         qs.reps++;
-        // If graded Easy 2+ times consecutively, min interval 21 days
         if (qs.reps >= 2 && consecutiveEasy(qs) >= 2) {
           qs.interval_days = Math.max(qs.interval_days, 21);
         }
@@ -244,10 +265,8 @@
         break;
     }
 
-    // Clamp ease factor
     qs.ease_factor = Math.max(1.3, Math.min(3.0, qs.ease_factor));
 
-    // Set next review
     const nextDate = new Date();
     nextDate.setDate(nextDate.getDate() + Math.round(qs.interval_days));
     qs.next_review = nextDate.toISOString().slice(0, 10);
@@ -299,14 +318,12 @@
   // ═══ STREAK ═══
   function calculateStreak() {
     if (sessionLog.length === 0) return 0;
-    // Sort dates descending
     const dates = sessionLog.filter(e => e.questions_done > 0).map(e => e.date).sort().reverse();
     if (dates.length === 0) return 0;
 
     let streak = 0;
     let checkDate = new Date(getTodayStr());
 
-    // If today has no entries yet, start checking from yesterday
     if (!dates.includes(getTodayStr())) {
       checkDate.setDate(checkDate.getDate() - 1);
     }
@@ -339,60 +356,36 @@
     }
   }
 
-  function updateTTSButtons() {
-    const autoTts = document.getElementById('auto-tts-toggle');
-    const manualTts = document.getElementById('tts-btn');
-    if (autoTts) autoTts.disabled = settings.hands_free;
-    if (manualTts) manualTts.disabled = settings.hands_free;
-    
-    const autoLabel = document.getElementById('tts-toggle-label');
-    if (autoLabel) {
-      autoLabel.style.opacity = settings.hands_free ? '0.5' : '1';
-      autoLabel.style.cursor = settings.hands_free ? 'not-allowed' : 'pointer';
-    }
-    if (manualTts) {
-      manualTts.style.opacity = settings.hands_free ? '0.5' : '1';
-      manualTts.style.cursor = settings.hands_free ? 'not-allowed' : 'pointer';
-    }
-  }
-
   // ═══ QUESTION SELECTION ═══
   function pickNextQuestion() {
     const today = getTodayStr();
 
-    // Collect all due questions
     let candidates = QUESTION_BANK.filter(q => {
-      if (settings.hands_free && q.type !== 'translation' && q.type !== 'listening') return false;
       if (currentMode === 'focused' && focusedTopic) {
         if (!q.topics.includes(focusedTopic)) return false;
       }
-      if (!settings.hands_free && q.type === 'listening' && !settings.auto_tts) return false;
+      if (q.type === 'listening' && !settings.auto_tts) return false;
       const qs = questionStates[q.id];
       return qs && qs.next_review <= today;
     });
 
-    // Sort by urgency: most overdue first, then by last grade severity
     candidates.sort((a, b) => {
       const qsA = questionStates[a.id];
       const qsB = questionStates[b.id];
-      // Days overdue (more overdue = smaller next_review)
       const overdueA = daysBetween(qsA.next_review, today);
       const overdueB = daysBetween(qsB.next_review, today);
-      if (overdueA !== overdueB) return overdueB - overdueA; // flip for desc
-      // Last grade severity
+      if (overdueA !== overdueB) return overdueB - overdueA;
       const sevA = gradeSeverity(qsA);
       const sevB = gradeSeverity(qsB);
       return sevB - sevA;
     });
 
     if (candidates.length === 0) {
-      // No questions due — pick most overdue anyway
       candidates = [...QUESTION_BANK].filter(q => {
-        if (settings.hands_free && q.type !== 'translation' && q.type !== 'listening') return false;
         if (currentMode === 'focused' && focusedTopic) {
           if (!q.topics.includes(focusedTopic)) return false;
         }
-        if (!settings.hands_free && q.type === 'listening' && !settings.auto_tts) return false;
+        if (q.type === 'listening' && !settings.auto_tts) return false;
         return true;
       }).sort((a, b) => {
         const qsA = questionStates[a.id];
@@ -402,23 +395,20 @@
       });
     }
 
-    // Weight by topic score (lower = higher weight)
     const weighted = candidates.map(q => {
       const topicScores = q.topics.map(t => topicStates[t]?.score || 50);
       const avgScore = topicScores.reduce((a, b) => a + b, 0) / topicScores.length;
-      let weight = Math.max(1, 110 - avgScore); // lower score → higher weight
-      if (avgScore < 40) weight *= 2; // drilling boost
-      if (avgScore >= 75) weight *= 0.4; // de-prioritize comfortable
+      let weight = Math.max(1, 110 - avgScore);
+      if (avgScore < 40) weight *= 2;
+      if (avgScore >= 75) weight *= 0.4;
       return { question: q, weight };
     });
 
-    // Apply type probability as secondary filter
     const typeWeight = (type) => TYPE_WEIGHTS[type] || 5;
     for (const item of weighted) {
-      item.weight *= typeWeight(item.question.type) / 50; // normalize somewhat
+      item.weight *= typeWeight(item.question.type) / 50;
     }
 
-    // Weighted random selection
     const totalWeight = weighted.reduce((s, w) => s + w.weight, 0);
     let rand = Math.random() * totalWeight;
     for (const item of weighted) {
@@ -439,15 +429,11 @@
   function speak(text, rate = 0.9, lang = 'fr-FR') {
     return new Promise((resolve) => {
       if (!window.speechSynthesis) return resolve();
-      
-      // If there's a pending promise, resolve it (cancellation)
-      if (speakPromiseResolve) speakPromiseResolve();
-      speakPromiseResolve = resolve;
-      
+
       window.speechSynthesis.cancel();
       const utt = new SpeechSynthesisUtterance(text);
       utt.lang = lang;
-      
+
       const voices = window.speechSynthesis.getVoices();
       if (lang.startsWith('fr')) {
         const thomas = voices.find(v => v.name.includes('Thomas') && v.lang.startsWith('fr'));
@@ -457,20 +443,10 @@
         const enVoice = voices.find(v => v.lang.startsWith('en'));
         if (enVoice) utt.voice = enVoice;
       }
-      
+
       utt.rate = rate;
-      utt.onend = () => {
-        if (speakPromiseResolve === resolve) {
-          speakPromiseResolve = null;
-          resolve();
-        }
-      };
-      utt.onerror = () => {
-        if (speakPromiseResolve === resolve) {
-          speakPromiseResolve = null;
-          resolve();
-        }
-      };
+      utt.onend = resolve;
+      utt.onerror = resolve;
       window.speechSynthesis.speak(utt);
     });
   }
@@ -481,21 +457,70 @@
     window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
   }
 
+  // ═══ VOCAB LIST MANAGEMENT ═══
+  function addVocabFromQuestion(question) {
+    if (!question.vocabulary || question.vocabulary.length === 0) return;
+    let changed = false;
+    for (const v of question.vocabulary) {
+      if (!v.fr || !v.en) continue;
+      const frLower = v.fr.toLowerCase().trim();
+      const exists = vocabList.some(item => item.fr.toLowerCase().trim() === frLower);
+      if (!exists) {
+        vocabList.unshift({ fr: v.fr.trim(), en: v.en.trim(), addedAt: Date.now() });
+        changed = true;
+      }
+    }
+    if (changed) {
+      window.storage.set('vocab_list', vocabList);
+    }
+  }
+
+  function moveVocabToEnd(index) {
+    if (index < 0 || index >= vocabList.length) return;
+    const [item] = vocabList.splice(index, 1);
+    vocabList.push(item);
+    window.storage.set('vocab_list', vocabList);
+    renderVocabDrill();
+  }
+
+  function removeVocab(index) {
+    if (index < 0 || index >= vocabList.length) return;
+    vocabList.splice(index, 1);
+    window.storage.set('vocab_list', vocabList);
+    renderVocabDrill();
+  }
+
+  function addCustomVocab(en, fr) {
+    if (!en.trim() || !fr.trim()) return;
+    const frLower = fr.toLowerCase().trim();
+    const exists = vocabList.some(item => item.fr.toLowerCase().trim() === frLower);
+    if (exists) return; // don't add duplicates
+    vocabList.unshift({ fr: fr.trim(), en: en.trim(), addedAt: Date.now() });
+    window.storage.set('vocab_list', vocabList);
+    renderVocabDrill();
+  }
+
   // ═══ VIEWS & DASHBOARD ═══
   function switchView(viewName) {
     document.getElementById('practice-view').classList.add('hidden');
     document.getElementById('dashboard-view').classList.add('hidden');
+    document.getElementById('vocab-drill-view').classList.add('hidden');
     document.getElementById('nav-practice').classList.remove('active');
     document.getElementById('nav-dashboard').classList.remove('active');
+    document.getElementById('nav-vocab').classList.remove('active');
 
     if (viewName === 'dashboard') {
       document.getElementById('dashboard-view').classList.remove('hidden');
       document.getElementById('nav-dashboard').classList.add('active');
       renderDashboard();
+    } else if (viewName === 'vocab') {
+      document.getElementById('vocab-drill-view').classList.remove('hidden');
+      document.getElementById('nav-vocab').classList.add('active');
+      renderVocabDrill();
     } else {
       document.getElementById('practice-view').classList.remove('hidden');
       document.getElementById('nav-practice').classList.add('active');
-      
+
       const banner = document.getElementById('focused-banner');
       if (currentMode === 'focused' && focusedTopic) {
         document.getElementById('focused-topic-name').textContent = TOPIC_LABELS[focusedTopic] || focusedTopic;
@@ -503,7 +528,7 @@
       } else {
         banner.classList.add('hidden');
       }
-      
+
       if (!currentQuestion) pickAndShowQuestion();
     }
   }
@@ -525,12 +550,11 @@
   function renderDashboard() {
     const grid = document.getElementById('topics-grid');
     grid.innerHTML = '';
-    
-    // Iterate over topics based on their original order in TOPIC_LABELS
+
     for (const [key, label] of Object.entries(TOPIC_LABELS)) {
       const state = topicStates[key] || { score: 50 };
       const score = Math.round(state.score);
-      
+
       let statusClass = 'status-drill';
       if (score >= 75) statusClass = 'status-master';
       else if (score >= 60) statusClass = 'status-good';
@@ -556,16 +580,115 @@
     });
   }
 
+  // ═══ VOCAB DRILL RENDERING ═══
+  function renderVocabDrill() {
+    const listEl = document.getElementById('vocab-list');
+    const searchVal = (document.getElementById('vocab-search')?.value || '').toLowerCase().trim();
+
+    // Filter by search
+    let filtered = vocabList.map((item, i) => ({ ...item, _idx: i }));
+    if (searchVal) {
+      filtered = filtered.filter(item =>
+        item.en.toLowerCase().includes(searchVal) ||
+        item.fr.toLowerCase().includes(searchVal)
+      );
+    }
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = `
+        <div class="vocab-empty">
+          <span class="vocab-empty-icon">📚</span>
+          ${vocabList.length === 0
+            ? 'No vocabulary yet. Practice some questions to start building your list!'
+            : 'No matches found.'}
+        </div>
+      `;
+      return;
+    }
+
+    listEl.innerHTML = '';
+    for (const item of filtered) {
+      const row = document.createElement('div');
+      row.className = 'vocab-row';
+      row.dataset.idx = item._idx;
+
+      row.innerHTML = `
+        <span class="vocab-row-en">${escapeHtml(item.en)}</span>
+        <span class="vocab-row-fr">
+          <span class="vocab-hidden">${escapeHtml(item.fr)}</span>
+        </span>
+        <span class="vocab-row-ok">
+          <button class="vocab-ok-btn">OK</button>
+        </span>
+      `;
+
+      // Reveal French on click
+      const frSpan = row.querySelector('.vocab-row-fr');
+      frSpan.addEventListener('click', () => {
+        const hidden = frSpan.querySelector('.vocab-hidden');
+        if (hidden) {
+          frSpan.innerHTML = `<span class="vocab-revealed">${escapeHtml(item.fr)}</span>`;
+          // TTS if enabled
+          if (settings.auto_tts) {
+            speak(item.fr, 0.9, 'fr-FR');
+          }
+        }
+      });
+
+      // OK button: click = move to end, long press = remove
+      const okBtn = row.querySelector('.vocab-ok-btn');
+      let pressTimer = null;
+      let longPressed = false;
+
+      const startPress = (e) => {
+        e.preventDefault();
+        longPressed = false;
+        okBtn.classList.add('holding');
+        pressTimer = setTimeout(() => {
+          longPressed = true;
+          okBtn.classList.remove('holding');
+          removeVocab(item._idx);
+        }, 800);
+      };
+
+      const endPress = (e) => {
+        e.preventDefault();
+        if (pressTimer) clearTimeout(pressTimer);
+        okBtn.classList.remove('holding');
+        if (!longPressed) {
+          moveVocabToEnd(item._idx);
+        }
+      };
+
+      const cancelPress = () => {
+        if (pressTimer) clearTimeout(pressTimer);
+        okBtn.classList.remove('holding');
+      };
+
+      okBtn.addEventListener('mousedown', startPress);
+      okBtn.addEventListener('mouseup', endPress);
+      okBtn.addEventListener('mouseleave', cancelPress);
+      okBtn.addEventListener('touchstart', startPress, { passive: false });
+      okBtn.addEventListener('touchend', endPress, { passive: false });
+      okBtn.addEventListener('touchcancel', cancelPress);
+
+      listEl.appendChild(row);
+    }
+  }
+
   // ═══ UI RENDERING ═══
   function pickAndShowQuestion() {
     currentQuestion = pickNextQuestion();
     revealed = false;
+    editMode = false;
     renderQuestion(currentQuestion);
+
+    // Collect vocab when question is shown
+    addVocabFromQuestion(currentQuestion);
   }
 
   function renderQuestion(q) {
-    if (hfTimeout) { clearTimeout(hfTimeout); hfTimeout = null; }
-    if (speakPromiseResolve) { speakPromiseResolve(); speakPromiseResolve = null; window.speechSynthesis?.cancel(); }
+    window.speechSynthesis?.cancel();
 
     // Type label
     document.getElementById('question-type-label').textContent = TYPE_LABELS[q.type] || q.type;
@@ -583,11 +706,11 @@
     // Prompt with vocabulary highlights
     const promptEl = document.getElementById('question-prompt');
     const listeningControls = document.getElementById('listening-controls');
-    
+
     if (q.type === 'listening') {
       promptEl.innerHTML = '<span style="color: var(--text-muted); font-style: italic; text-align: center; display: block;">🎧 Listen to the phrase...</span>';
       listeningControls.classList.remove('hidden');
-      if (settings.auto_tts && !settings.hands_free) {
+      if (settings.auto_tts) {
         speak(q.tts_answer, 1.0);
       }
     } else {
@@ -595,10 +718,11 @@
       listeningControls.classList.add('hidden');
     }
 
-    // Reset answer/grade visibility
+    // Reset answer/grade/edit visibility
     document.getElementById('reveal-btn').classList.remove('hidden');
     document.getElementById('answer-area').classList.add('hidden');
     document.getElementById('grade-buttons').classList.add('hidden');
+    document.getElementById('edit-area').classList.add('hidden');
 
     // Re-trigger card animation
     const card = document.getElementById('question-card');
@@ -607,28 +731,6 @@
     card.style.animation = 'cardFadeIn 0.4s ease';
 
     updateTodayCount();
-
-    if (settings.hands_free) {
-      if (q.type === 'translation') {
-        const plainText = q.prompt.replace(/<[^>]+>/g, '');
-        speak(plainText, 1.0, 'en-US').then(() => {
-          hfTimeout = setTimeout(revealAnswer, 8000);
-        });
-      } else if (q.type === 'listening') {
-        let playCount = 0;
-        const playLoop = () => {
-          playCount++;
-          speak(q.tts_answer, 0.6, 'fr-FR').then(() => {
-            if (playCount < 4) {
-              hfTimeout = setTimeout(playLoop, 1000);
-            } else {
-              hfTimeout = setTimeout(revealAnswer, 2000);
-            }
-          });
-        };
-        playLoop();
-      }
-    }
   }
 
   function highlightVocab(text, vocabulary) {
@@ -636,7 +738,6 @@
     let result = escapeHtml(text);
     for (const v of vocabulary) {
       const escaped = escapeHtml(v.fr);
-      // Case-insensitive replacement in the escaped text
       const regex = new RegExp(escapeRegex(escaped), 'gi');
       result = result.replace(regex, match =>
         `<span class="vocab-hl" data-meaning="${escapeHtml(v.en)}" tabindex="0">${match}</span>`
@@ -658,7 +759,6 @@
   function revealAnswer() {
     if (revealed) return;
     revealed = true;
-    if (hfTimeout) { clearTimeout(hfTimeout); hfTimeout = null; }
 
     const q = currentQuestion;
     document.getElementById('reveal-btn').classList.add('hidden');
@@ -668,7 +768,6 @@
     contentEl.innerHTML = '';
 
     if (q.type === 'translation') {
-      // Show variants as numbered list
       for (let i = 0; i < q.answers.length; i++) {
         const div = document.createElement('div');
         div.className = 'answer-variant';
@@ -682,7 +781,6 @@
         contentEl.appendChild(div);
       }
     } else {
-      // Single answer + explanation
       const ansDiv = document.createElement('div');
       ansDiv.className = 'answer-variant';
       ansDiv.innerHTML = highlightVocab(q.answers[0], q.vocabulary);
@@ -699,27 +797,206 @@
     document.getElementById('answer-area').classList.remove('hidden');
     document.getElementById('grade-buttons').classList.remove('hidden');
 
-    // HF mode styling
-    if (settings.hands_free) {
-      document.getElementById('grade-buttons').classList.add('hf-mode');
-      // Wait 5s, auto read, delay 3s, next question
-      hfTimeout = setTimeout(() => {
-        speak(q.tts_answer, 1.0, 'fr-FR').then(() => {
-          hfTimeout = setTimeout(pickAndShowQuestion, 3000);
-        });
-      }, 5000);
-    } else {
-      document.getElementById('grade-buttons').classList.remove('hf-mode');
-      // Auto TTS
-      if (settings.auto_tts) {
-        speak(q.tts_answer);
-      }
+    // Auto TTS
+    if (settings.auto_tts) {
+      speak(q.tts_answer);
+    }
+
+    // Collect vocab on reveal too
+    addVocabFromQuestion(q);
+  }
+
+  // ═══ EDIT MODE ═══
+  function enterEditMode() {
+    if (!currentQuestion || !revealed) return;
+    editMode = true;
+
+    // Hide grade buttons and answer area
+    document.getElementById('grade-buttons').classList.add('hidden');
+    document.getElementById('answer-area').classList.add('hidden');
+
+    // Show edit area
+    const editArea = document.getElementById('edit-area');
+    editArea.classList.remove('hidden');
+
+    const fieldsEl = document.getElementById('edit-fields');
+    const q = currentQuestion;
+    fieldsEl.innerHTML = '';
+
+    // Prompt
+    fieldsEl.innerHTML += `
+      <div class="edit-field-group">
+        <label class="edit-field-label">Prompt</label>
+        <textarea class="edit-textarea" id="edit-prompt">${escapeHtml(q.prompt)}</textarea>
+      </div>
+    `;
+
+    // Answers
+    let answersHtml = `<div class="edit-field-group"><label class="edit-field-label">Answers</label>`;
+    for (let i = 0; i < q.answers.length; i++) {
+      answersHtml += `
+        <div class="edit-array-item" data-answer-idx="${i}">
+          <input class="edit-input edit-answer" value="${escapeHtml(q.answers[i])}" placeholder="Answer ${i + 1}">
+          <button class="edit-remove-btn" data-remove="answer" data-idx="${i}">✕</button>
+        </div>
+      `;
+    }
+    answersHtml += `<button class="edit-add-btn" id="edit-add-answer">+ Add Answer</button></div>`;
+    fieldsEl.innerHTML += answersHtml;
+
+    // Explanations
+    let explHtml = `<div class="edit-field-group"><label class="edit-field-label">Explanations</label>`;
+    const explArr = q.explanations || [];
+    for (let i = 0; i < Math.max(explArr.length, q.answers.length); i++) {
+      explHtml += `
+        <div class="edit-array-item" data-expl-idx="${i}">
+          <input class="edit-input edit-explanation" value="${escapeHtml(explArr[i] || '')}" placeholder="Explanation ${i + 1}">
+          <button class="edit-remove-btn" data-remove="explanation" data-idx="${i}">✕</button>
+        </div>
+      `;
+    }
+    explHtml += `<button class="edit-add-btn" id="edit-add-explanation">+ Add Explanation</button></div>`;
+    fieldsEl.innerHTML += explHtml;
+
+    // TTS Answer
+    fieldsEl.innerHTML += `
+      <div class="edit-field-group">
+        <label class="edit-field-label">TTS Answer</label>
+        <input class="edit-input" id="edit-tts-answer" value="${escapeHtml(q.tts_answer || '')}">
+      </div>
+    `;
+
+    // Vocabulary
+    let vocabHtml = `<div class="edit-field-group"><label class="edit-field-label">Vocabulary</label>`;
+    const vocabArr = q.vocabulary || [];
+    for (let i = 0; i < vocabArr.length; i++) {
+      vocabHtml += `
+        <div class="edit-vocab-pair" data-vocab-idx="${i}">
+          <input class="edit-input edit-vocab-fr" value="${escapeHtml(vocabArr[i].fr)}" placeholder="French">
+          <input class="edit-input edit-vocab-en" value="${escapeHtml(vocabArr[i].en)}" placeholder="English">
+          <button class="edit-remove-btn" data-remove="vocab" data-idx="${i}">✕</button>
+        </div>
+      `;
+    }
+    vocabHtml += `<button class="edit-add-btn" id="edit-add-vocab">+ Add Vocab Pair</button></div>`;
+    fieldsEl.innerHTML += vocabHtml;
+
+    // Bind add/remove buttons inside edit area
+    bindEditAreaEvents();
+  }
+
+  function bindEditAreaEvents() {
+    const fieldsEl = document.getElementById('edit-fields');
+
+    // Remove buttons
+    fieldsEl.querySelectorAll('.edit-remove-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.closest('.edit-array-item, .edit-vocab-pair').remove();
+      });
+    });
+
+    // Add answer
+    const addAnswerBtn = document.getElementById('edit-add-answer');
+    if (addAnswerBtn) {
+      addAnswerBtn.addEventListener('click', () => {
+        const group = addAnswerBtn.closest('.edit-field-group');
+        const div = document.createElement('div');
+        div.className = 'edit-array-item';
+        div.innerHTML = `
+          <input class="edit-input edit-answer" value="" placeholder="New answer">
+          <button class="edit-remove-btn">✕</button>
+        `;
+        div.querySelector('.edit-remove-btn').addEventListener('click', () => div.remove());
+        group.insertBefore(div, addAnswerBtn);
+      });
+    }
+
+    // Add explanation
+    const addExplBtn = document.getElementById('edit-add-explanation');
+    if (addExplBtn) {
+      addExplBtn.addEventListener('click', () => {
+        const group = addExplBtn.closest('.edit-field-group');
+        const div = document.createElement('div');
+        div.className = 'edit-array-item';
+        div.innerHTML = `
+          <input class="edit-input edit-explanation" value="" placeholder="New explanation">
+          <button class="edit-remove-btn">✕</button>
+        `;
+        div.querySelector('.edit-remove-btn').addEventListener('click', () => div.remove());
+        group.insertBefore(div, addExplBtn);
+      });
+    }
+
+    // Add vocab pair
+    const addVocabBtn = document.getElementById('edit-add-vocab');
+    if (addVocabBtn) {
+      addVocabBtn.addEventListener('click', () => {
+        const group = addVocabBtn.closest('.edit-field-group');
+        const div = document.createElement('div');
+        div.className = 'edit-vocab-pair';
+        div.innerHTML = `
+          <input class="edit-input edit-vocab-fr" value="" placeholder="French">
+          <input class="edit-input edit-vocab-en" value="" placeholder="English">
+          <button class="edit-remove-btn">✕</button>
+        `;
+        div.querySelector('.edit-remove-btn').addEventListener('click', () => div.remove());
+        group.insertBefore(div, addVocabBtn);
+      });
     }
   }
 
+  function saveQuestionEdit() {
+    if (!currentQuestion) return;
+    const q = currentQuestion;
+
+    // Read values from edit fields
+    const promptEl = document.getElementById('edit-prompt');
+    const ttsEl = document.getElementById('edit-tts-answer');
+
+    q.prompt = promptEl ? promptEl.value : q.prompt;
+    q.tts_answer = ttsEl ? ttsEl.value : q.tts_answer;
+
+    // Answers
+    const answerInputs = document.querySelectorAll('#edit-fields .edit-answer');
+    q.answers = Array.from(answerInputs).map(input => input.value).filter(v => v.trim());
+
+    // Explanations
+    const explInputs = document.querySelectorAll('#edit-fields .edit-explanation');
+    q.explanations = Array.from(explInputs).map(input => input.value);
+
+    // Vocabulary
+    const vocabPairs = document.querySelectorAll('#edit-fields .edit-vocab-pair');
+    q.vocabulary = Array.from(vocabPairs).map(pair => ({
+      fr: pair.querySelector('.edit-vocab-fr').value,
+      en: pair.querySelector('.edit-vocab-en').value
+    })).filter(v => v.fr.trim() || v.en.trim());
+
+    // Save the patch to persistent edits
+    questionEdits[q.id] = {
+      prompt: q.prompt,
+      answers: q.answers,
+      explanations: q.explanations,
+      tts_answer: q.tts_answer,
+      vocabulary: q.vocabulary
+    };
+
+    window.storage.set('question_edits', questionEdits);
+
+    exitEditMode();
+    // Re-render the revealed answer with updated data
+    revealed = false;
+    revealAnswer();
+  }
+
+  function exitEditMode() {
+    editMode = false;
+    document.getElementById('edit-area').classList.add('hidden');
+    document.getElementById('answer-area').classList.remove('hidden');
+    document.getElementById('grade-buttons').classList.remove('hidden');
+  }
+
   async function handleGrade(grade) {
-    if (!currentQuestion || !revealed) return;
-    if (hfTimeout) { clearTimeout(hfTimeout); hfTimeout = null; }
+    if (!currentQuestion || !revealed || editMode) return;
 
     gradeQuestion(currentQuestion.id, grade);
     updateTopicScores(currentQuestion, grade);
@@ -728,14 +1005,7 @@
     updateTodayCount();
 
     await saveAll();
-    
-    if (settings.hands_free) {
-      speak(currentQuestion.tts_answer, 1.0, 'fr-FR').then(() => {
-        hfTimeout = setTimeout(pickAndShowQuestion, 3000);
-      });
-    } else {
-      pickAndShowQuestion();
-    }
+    pickAndShowQuestion();
   }
 
   function updateTodayCount() {
@@ -749,6 +1019,7 @@
     // Nav & Action buttons
     document.getElementById('nav-practice').addEventListener('click', () => switchView('practice'));
     document.getElementById('nav-dashboard').addEventListener('click', () => switchView('dashboard'));
+    document.getElementById('nav-vocab').addEventListener('click', () => switchView('vocab'));
     document.getElementById('exit-focus-btn').addEventListener('click', exitFocusedSession);
 
     // Reveal button
@@ -761,9 +1032,15 @@
 
     // TTS button
     document.getElementById('tts-btn').addEventListener('click', () => {
-      if (settings.hands_free) return;
       if (currentQuestion) speak(currentQuestion.tts_answer);
     });
+
+    // Edit button
+    document.getElementById('edit-btn').addEventListener('click', enterEditMode);
+
+    // Edit save/cancel
+    document.getElementById('edit-save-btn').addEventListener('click', saveQuestionEdit);
+    document.getElementById('edit-cancel-btn').addEventListener('click', exitEditMode);
 
     // Listening speed buttons
     document.querySelectorAll('.speed-btn').forEach(btn => {
@@ -781,22 +1058,35 @@
       await window.storage.set('settings', settings);
     });
 
-    const hfToggle = document.getElementById('hands-free-toggle');
-    if (hfToggle) {
-      hfToggle.addEventListener('change', async (e) => {
-        settings.hands_free = e.target.checked;
-        await window.storage.set('settings', settings);
-        updateTTSButtons();
-        if (hfTimeout) { clearTimeout(hfTimeout); hfTimeout = null; }
-        if (window.speechSynthesis) window.speechSynthesis.cancel();
-        if (settings.hands_free) pickAndShowQuestion();
+    // Vocab drill: add word
+    document.getElementById('vocab-add-btn').addEventListener('click', () => {
+      const enInput = document.getElementById('vocab-add-en');
+      const frInput = document.getElementById('vocab-add-fr');
+      addCustomVocab(enInput.value, frInput.value);
+      enInput.value = '';
+      frInput.value = '';
+    });
+
+    // Vocab drill: search
+    document.getElementById('vocab-search').addEventListener('input', () => {
+      renderVocabDrill();
+    });
+
+    // Vocab drill: Enter key in add inputs
+    const vocabAddInputs = document.querySelectorAll('.vocab-add-input');
+    vocabAddInputs.forEach(input => {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          document.getElementById('vocab-add-btn').click();
+        }
       });
-    }
+    });
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-      // Don't intercept if user is in an input
+      // Don't intercept if user is in an input or editing
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (editMode) return;
 
       if (e.code === 'Space') {
         e.preventDefault();

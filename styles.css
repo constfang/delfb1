@@ -449,12 +449,18 @@ body {
   color: var(--text);
 }
 
-/* TTS button */
+/* Answer action buttons */
+.answer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
 .tts-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-top: 14px;
   width: 40px;
   height: 40px;
   font-size: 1.2rem;
@@ -469,6 +475,192 @@ body {
   background: var(--accent-bg);
   color: var(--accent);
   border-color: var(--accent-soft);
+}
+
+.edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  font-size: 1.1rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--text-muted);
+}
+
+.edit-btn:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+
+/* ═══ EDIT MODE ═══ */
+.edit-area {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  animation: answerReveal 0.35s ease;
+}
+
+.edit-area.hidden { display: none; }
+
+.edit-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.edit-field-group {
+  margin-bottom: 16px;
+}
+
+.edit-field-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.edit-input,
+.edit-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.edit-input:focus,
+.edit-textarea:focus {
+  border-color: var(--accent);
+}
+
+.edit-textarea {
+  min-height: 60px;
+  resize: vertical;
+  font-family: var(--font-display);
+  line-height: 1.6;
+}
+
+.edit-array-item {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+.edit-array-item .edit-input {
+  flex: 1;
+}
+
+.edit-remove-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--hard);
+  color: var(--hard);
+  cursor: pointer;
+  font-size: 0.85rem;
+  border-radius: var(--radius);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.edit-remove-btn:hover {
+  background: var(--hard);
+  color: #fff;
+}
+
+.edit-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--accent);
+  background: transparent;
+  border: 1px dashed var(--accent-soft);
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: all 0.2s ease;
+  margin-top: 4px;
+}
+
+.edit-add-btn:hover {
+  background: var(--accent-bg);
+}
+
+.edit-vocab-pair {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+.edit-vocab-pair .edit-input {
+  flex: 1;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.edit-save-btn,
+.edit-cancel-btn {
+  flex: 1;
+  padding: 12px;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: all 0.2s ease;
+}
+
+.edit-save-btn {
+  background: var(--easy);
+  border: none;
+  color: #fff;
+}
+
+.edit-save-btn:hover {
+  background: #2E6A4A;
+}
+
+.edit-cancel-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.edit-cancel-btn:hover {
+  background: var(--bg);
+  border-color: var(--text-muted);
+  color: var(--text);
 }
 
 /* ═══ GRADE BUTTONS ═══ */
@@ -523,16 +715,6 @@ body {
 .grade-ok:hover   { background: #4A5E72; }
 .grade-ehh:hover  { background: #B07828; }
 .grade-hard:hover { background: #9A2E2E; }
-
-/* Hands-Free Mode Overrides */
-.hf-mode .grade-easy,
-.hf-mode .grade-hard {
-  display: none !important;
-}
-
-.hf-mode.grade-buttons {
-  grid-template-columns: 1fr 1fr;
-}
 
 /* ═══ DASHBOARD ═══ */
 .dashboard-header {
@@ -619,6 +801,278 @@ body {
   color: var(--bg-card);
 }
 
+/* ═══ VOCAB DRILL ═══ */
+.vocab-drill-header {
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.vocab-drill-header h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  color: var(--navy);
+  margin-bottom: 6px;
+}
+
+.vocab-drill-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.vocab-add-bar {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.vocab-add-input {
+  flex: 1;
+  padding: 10px 12px;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.vocab-add-input:focus {
+  border-color: var(--accent);
+}
+
+.vocab-add-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.vocab-add-btn {
+  padding: 10px 18px;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.vocab-add-btn:hover {
+  background: var(--accent-soft);
+}
+
+.vocab-search-bar {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.vocab-search-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.vocab-search-input:focus {
+  border-color: var(--accent);
+}
+
+.vocab-search-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.vocab-list-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.vocab-list-header span {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.vocab-col-en {
+  flex: 1;
+}
+
+.vocab-col-fr {
+  flex: 1;
+}
+
+.vocab-col-ok {
+  width: 70px;
+  text-align: center;
+}
+
+.vocab-list {
+  width: 100%;
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom scrollbar */
+.vocab-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.vocab-list::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+.vocab-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.vocab-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+.vocab-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  transition: background 0.15s ease;
+  animation: vocabRowIn 0.25s ease;
+}
+
+@keyframes vocabRowIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.vocab-row:hover {
+  background: rgba(201,144,58,0.04);
+}
+
+.vocab-row-en {
+  flex: 1;
+  font-size: 0.9rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.vocab-row-fr {
+  flex: 1;
+  font-size: 0.9rem;
+  font-family: var(--font-display);
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.vocab-row-fr .vocab-hidden {
+  color: transparent;
+  background: var(--border);
+  border-radius: var(--radius);
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.vocab-row-fr .vocab-hidden::after {
+  content: 'TAP TO REVEAL';
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 0.65rem;
+  font-weight: 600;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.vocab-row-fr .vocab-revealed {
+  color: var(--accent);
+  font-weight: 400;
+  animation: vocabReveal 0.3s ease;
+}
+
+@keyframes vocabReveal {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.vocab-row-ok {
+  width: 70px;
+  text-align: center;
+}
+
+.vocab-ok-btn {
+  padding: 6px 16px;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--ok);
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: all 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.vocab-ok-btn:hover {
+  background: #4A5E72;
+}
+
+.vocab-ok-btn:active {
+  transform: scale(0.93);
+}
+
+.vocab-ok-btn.holding {
+  background: var(--hard);
+  transform: scale(0.93);
+}
+
+.vocab-empty {
+  width: 100%;
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.vocab-empty-icon {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
 /* ═══ FOOTER ═══ */
 #footer {
   text-align: center;
@@ -667,4 +1121,22 @@ body {
   #question-prompt { font-size: 1.15rem; }
   .grade-buttons { gap: 5px; }
   .grade-btn { padding: 12px 4px; font-size: 0.75rem; }
+
+  .vocab-add-bar {
+    flex-direction: column;
+  }
+
+  .vocab-row {
+    padding: 8px 12px;
+  }
+
+  .vocab-row-en,
+  .vocab-row-fr {
+    font-size: 0.8rem;
+  }
+
+  .vocab-ok-btn {
+    padding: 5px 10px;
+    font-size: 0.7rem;
+  }
 }

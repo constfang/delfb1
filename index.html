@@ -19,6 +19,7 @@
       <div class="nav-tabs">
         <button id="nav-practice" class="nav-tab active">Practice</button>
         <button id="nav-dashboard" class="nav-tab">Progress</button>
+        <button id="nav-vocab" class="nav-tab">Vocab Drill</button>
       </div>
     </div>
     <div class="top-bar-right">
@@ -26,11 +27,6 @@
         <span class="streak-icon">🔥</span>
         <span id="streak-count">0</span>
       </div>
-      <label class="tts-toggle" id="hands-free-toggle-label" title="Hands-Free Mode">
-        <span class="tts-label-text">Hands-Free</span>
-        <input type="checkbox" id="hands-free-toggle">
-        <span class="tts-slider"></span>
-      </label>
       <label class="tts-toggle" id="tts-toggle-label">
         <span class="tts-label-text">Auto TTS</span>
         <input type="checkbox" id="auto-tts-toggle">
@@ -69,7 +65,20 @@
       <div id="answer-area" class="answer-area hidden">
         <div id="topic-badges"></div>
         <div id="answer-content"></div>
-        <button id="tts-btn" class="tts-btn" title="Listen 🔊">🔊</button>
+        <div class="answer-actions">
+          <button id="tts-btn" class="tts-btn" title="Listen 🔊">🔊</button>
+          <button id="edit-btn" class="edit-btn" title="Edit question ✏️">✏️</button>
+        </div>
+      </div>
+
+      <!-- ═══ EDIT MODE ═══ -->
+      <div id="edit-area" class="edit-area hidden">
+        <h3 class="edit-title">Edit Question</h3>
+        <div id="edit-fields"></div>
+        <div class="edit-actions">
+          <button id="edit-save-btn" class="edit-save-btn">Save</button>
+          <button id="edit-cancel-btn" class="edit-cancel-btn">Cancel</button>
+        </div>
       </div>
 
       <!-- ═══ GRADING BUTTONS ═══ -->
@@ -87,6 +96,7 @@
           <span class="grade-key">4</span> Hard
         </button>
       </div>
+      </div>
     </section>
 
     <!-- ═══ DASHBOARD VIEW ═══ -->
@@ -100,13 +110,41 @@
       </div>
     </section>
 
+    <!-- ═══ VOCAB DRILL VIEW ═══ -->
+    <section id="vocab-drill-view" class="view-section hidden">
+      <div class="vocab-drill-header">
+        <h2>Vocab Drill</h2>
+        <p class="vocab-drill-hint">Tap the French column to reveal. OK → send to end. Hold OK → remove.</p>
+      </div>
+
+      <div class="vocab-add-bar">
+        <input type="text" id="vocab-add-en" class="vocab-add-input" placeholder="English word…">
+        <input type="text" id="vocab-add-fr" class="vocab-add-input" placeholder="French word…">
+        <button id="vocab-add-btn" class="vocab-add-btn">+ Add</button>
+      </div>
+
+      <div class="vocab-search-bar">
+        <input type="text" id="vocab-search" class="vocab-search-input" placeholder="Search vocab…">
+      </div>
+
+      <div class="vocab-list-header">
+        <span class="vocab-col-en">English</span>
+        <span class="vocab-col-fr">French</span>
+        <span class="vocab-col-ok"></span>
+      </div>
+
+      <div id="vocab-list" class="vocab-list">
+        <!-- Injected by JS -->
+      </div>
+    </section>
+
   </main>
 
   <footer id="footer">
     <span class="footer-hint">Space to reveal · 1–4 to grade</span>
     <div class="footer-subscript">
       Author: Nhan Nguyen + AI<br>
-      Version: 1.1
+      Version: 1.2
     </div>
   </footer>
 
