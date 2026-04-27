@@ -475,19 +475,57 @@
     }
   }
 
-  function moveVocabToEnd(index) {
-    if (index < 0 || index >= vocabList.length) return;
-    const [item] = vocabList.splice(index, 1);
-    vocabList.push(item);
-    window.storage.set('vocab_list', vocabList);
-    renderVocabDrill();
+  // Decrement data-idx on all rows whose index is > removedIdx.
+  function _shiftIdxDown(listEl, afterIdx) {
+    listEl.querySelectorAll('.vocab-row').forEach(r => {
+      const n = parseInt(r.dataset.idx);
+      if (n > afterIdx) r.dataset.idx = n - 1;
+    });
   }
 
-  function removeVocab(index) {
+  function moveVocabToEnd(index, rowEl) {
+    if (index < 0 || index >= vocabList.length) return;
+    const [moved] = vocabList.splice(index, 1);
+    vocabList.push(moved);
+    window.storage.set('vocab_list', vocabList);
+    if (rowEl) {
+      const listEl = document.getElementById('vocab-list');
+      // Update indices: rows after the removed position shift down by 1.
+      _shiftIdxDown(listEl, index);
+      // Give the moved row the last index.
+      rowEl.dataset.idx = vocabList.length - 1;
+      // DOM move (appendChild detaches from current position automatically).
+      listEl.appendChild(rowEl);
+    } else {
+      renderVocabDrill();
+    }
+  }
+
+  function removeVocab(index, rowEl) {
     if (index < 0 || index >= vocabList.length) return;
     vocabList.splice(index, 1);
     window.storage.set('vocab_list', vocabList);
-    renderVocabDrill();
+    if (rowEl) {
+      const listEl = document.getElementById('vocab-list');
+      // Shift remaining rows' indices down.
+      _shiftIdxDown(listEl, index);
+      // Animate the row out, then detach.
+      const h = rowEl.offsetHeight;
+      rowEl.style.overflow = 'hidden';
+      rowEl.style.maxHeight = h + 'px';
+      rowEl.style.transition = 'opacity 0.22s ease, max-height 0.28s ease, margin-bottom 0.28s ease';
+      // Double-rAF ensures the starting values are committed before the transition kicks in.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        rowEl.style.opacity = '0';
+        rowEl.style.maxHeight = '0';
+        rowEl.style.marginBottom = '0';
+      }));
+      rowEl.addEventListener('transitionend', () => rowEl.remove(), { once: true });
+      // Safety net: if transitionend never fires (e.g. hidden tab), remove after 400ms.
+      setTimeout(() => { if (rowEl.parentNode) rowEl.remove(); }, 400);
+    } else {
+      renderVocabDrill();
+    }
   }
 
   function addCustomVocab(en, fr) {
@@ -583,24 +621,14 @@
   // ═══ VOCAB DRILL RENDERING ═══
   function renderVocabDrill() {
     const listEl = document.getElementById('vocab-list');
-    const searchVal = (document.getElementById('vocab-search')?.value || '').toLowerCase().trim();
 
-    // Filter by search
-    let filtered = vocabList.map((item, i) => ({ ...item, _idx: i }));
-    if (searchVal) {
-      filtered = filtered.filter(item =>
-        item.en.toLowerCase().includes(searchVal) ||
-        item.fr.toLowerCase().includes(searchVal)
-      );
-    }
+    const filtered = vocabList.map((item, i) => ({ ...item, _idx: i }));
 
     if (filtered.length === 0) {
       listEl.innerHTML = `
         <div class="vocab-empty">
           <span class="vocab-empty-icon">📚</span>
-          ${vocabList.length === 0
-            ? 'No vocabulary yet. Practice some questions to start building your list!'
-            : 'No matches found.'}
+          No vocabulary yet. Practice some questions to start building your list!
         </div>
       `;
       return;
@@ -647,22 +675,29 @@
         pressTimer = setTimeout(() => {
           longPressed = true;
           okBtn.classList.remove('holding');
-          removeVocab(item._idx);
+          // Read index fresh from DOM at the moment of press.
+          removeVocab(parseInt(row.dataset.idx), row);
         }, 800);
       };
 
       const endPress = (e) => {
         e.preventDefault();
-        if (pressTimer) clearTimeout(pressTimer);
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
         okBtn.classList.remove('holding');
         if (!longPressed) {
-          moveVocabToEnd(item._idx);
+          // Read index fresh from DOM at the moment of press.
+          moveVocabToEnd(parseInt(row.dataset.idx), row);
         }
+        longPressed = false;
       };
 
       const cancelPress = () => {
-        if (pressTimer) clearTimeout(pressTimer);
-        okBtn.classList.remove('holding');
+        // Only cancel if the long-press hasn't fired yet — if it has,
+        // the remove animation is already in progress; leave it alone.
+        if (!longPressed) {
+          if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+          okBtn.classList.remove('holding');
+        }
       };
 
       okBtn.addEventListener('mousedown', startPress);
